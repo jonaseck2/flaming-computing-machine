@@ -41,6 +41,7 @@ function startBuilder (err) {
     }
 
     if (build) {
+      log(build.fullName + ' building...');
       docker.build(build, function (err) {
         build.nrOfAttempts += 1;
         build.buildAt = new Date();
