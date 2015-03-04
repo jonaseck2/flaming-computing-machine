@@ -1,24 +1,121 @@
 'use strict';
 var spawn = require('child_process').spawn;
+var exec = require('child_process').exec;
+var dbHost = process.env.MONGO_HOST || 'localhost';
 
 exports.build = function build (build, cb) {
-  buildImage(build.repo, build.fullName.toLowerCase(), cb);
+  var image = buildToImageName(build);
+  buildImage(build.repo, image, function (err) {
+    cb(err, image);
+  });
 };
 
-function buildImage (repo, tag, cb) {
-  var docker = spawn('docker', ['build', '-t', tag, repo]);
+exports.getRunning = function getRunning (build, cb) {
+  runningImages(buildToTagName(build), function (err, res) {
+    if (err) {
+      return cb(err);
+    }
+    // The response is one container id per line, make an array of it:
+    cb(null, res.trim().split(/\n/g));
+  });
+};
+
+exports.isRunning = function (containerName, cb) {
+  exec('docker ps | grep "' + containerName + '"', function (err, stdout, stderr) {
+    if (err) {
+      return cb(err);
+    }
+    stdout = (''+stdout).trim();
+    cb(null, !!stdout);
+  });
+};
+
+exports.kill = function kill (containerIds, cb) {
+  if (!containerIds.length) {
+    // No containers to kill, do nothing...
+    return cb();
+  }
+  // Force remove all given container id's (the quickest way to stop a running container)
+  // Should consider making this in two steps though, like:
+  //   1. docker stop <containerid>
+  //   2. docker rm <containerid>
+  // Which is better, and gives each container the chance for cleaning up before being killed
+  run('docker', ['rm', '-f'].concat(containerIds), cb);
+};
+
+exports.run = function runImage (build, cb) {
+  var now = +new Date();
+  var name = buildToTagName(build) + '_' + now;
+  run('docker', [
+    'run',
+    // Run container as daemon
+    '-d',
+    // Give it a unique and grep-able name (see `runningImages` below)
+    '--name', name,
+    // Pass the GITHUB_SECRET env var on to the container (used by the API-container)
+    '-e', 'GITHUB_SECRET=' + process.env.GITHUB_SECRET,
+    // Pass the MONGO_HOST env var on to the container (used by the API-container)
+    '-e', 'MONGO_HOST=' + dbHost,
+    // Give it a virtual host configuration that [Katalog](https://registry.hub.docker.com/u/joakimbeng/katalog/) picks up
+    '-e', 'KATALOG_VHOSTS=default/' + build.endpoint,
+    buildToImageName(build)
+  ], function (err) {
+    cb(err, name);
+  });
+};
+
+function buildToImageName (build) {
+  // build.fullName is GitHub's "<owner>/<repo>", e.g. "Softhouse/laughing-batman"
+  // Docker does not allow uppercase letters in image names though:
+  return build.fullName.toLowerCase();
+}
+
+function buildToTagName (build) {
+  // "/" is used by docker as a namespace separator, so we must remove it
+  // before using it as the name for a new container:
+  return buildToImageName(build).replace(/\//g, '_');
+}
+
+function runningImages (tag, cb) {
+  // Running `exec` instead of `spawn` here, because otherwise piping is complex.
+  // What we do here is:
+  //  * docker ps -a # list all containers, running or not
+  //  * grep "<container tag name>" # filter by container tag name, used when starting the container in `runImage` above
+  //  * awk '{print $1}' # get the contents of the first column in the output, i.e. the container id's
+  exec('docker ps -a | grep "' + tag + '" | awk \'{print $1}\'', function (err, stdout, stderr) {
+    if (err) {
+      return cb(err);
+    }
+    cb(null, ''+stdout);
+  });
+}
+
+function buildImage (repo, imageName, cb) {
+  // Builds a container from a repository URL and tags it with an image name:
+  run('docker', ['build', '-t', imageName, repo], cb);
+}
+
+/**
+ * A simplified `spawn` api
+ *
+ * @param {String} cmd - Command to run
+ * @param {Array} args - Arguments to pass to command
+ * @param {Function} cb - Callback to call when done or error
+ */
+function run (cmd, args, cb) {
+  var command = spawn(cmd, args);
 
   var data = '';
 
-  docker.stdout.on('data', function (d) {
+  command.stdout.on('data', function (d) {
     data += d;
   });
 
-  docker.stderr.on('data', function (d) {
+  command.stderr.on('data', function (d) {
     data += d;
   });
 
-  docker.on('close', function (code) {
+  command.on('close', function (code) {
     if (code !== 0) {
       return cb(new Error(data));
     }

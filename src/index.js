@@ -32,6 +32,8 @@ function startBuilder (err) {
     }, 100);
   }
 
+  // TODO: Make this promisified for less callback nesting...
+
   queue.next(db, function (err, build) {
     if (err) {
       error(err);
@@ -42,22 +44,55 @@ function startBuilder (err) {
 
     if (build) {
       log(build.fullName + ' building...');
-      docker.build(build, function (err) {
-        build.nrOfAttempts += 1;
-        build.buildAt = new Date();
+      // Get current running container ids for build:
+      docker.getRunning(build, function (err, oldContainers) {
+        // Build the container:
+        docker.build(build, function (err) {
+          build.nrOfAttempts += 1;
+          build.buildAt = new Date();
 
-        if (err) {
-          error(build.fullName + ' failed!');
-          build.message = err.message;
-        } else {
-          log(build.fullName + ' succeeded!');
-          build.isSuccessful = true;
-        }
+          if (err) {
+            error(build.fullName + ' failed!');
+            build.message = err.message;
+          } else {
+            log(build.fullName + ' succeeded!');
+            build.isSuccessful = true;
+          }
 
-        queue.update(db, build, next);
+          // Update db with build status:
+          queue.update(db, build, function (err) {
+            if (err) {
+              return next(err);
+            }
+            if (!build.isSuccessful) {
+              return next();
+            }
+            // If the build were successful, run the container:
+            docker.run(build, function (err, containerName) {
+              if (err) {
+                return next(err);
+              }
+              // After 10 seconds, see if the container is still running
+              // if so, kill the old containers for the same build.
+              setTimeout(function () {
+                docker.isRunning(containerName, function (err, isRunning) {
+                  if (err) {
+                    return next(err);
+                  }
+                  if (!isRunning) {
+                    error(build.fullName + '. Container: ' + containerName + ', didn\'t run for 10 seconds');
+                    return next();
+                  }
+                  log(build.fullName + '. Container: ' + containerName + ', up and running.');
+                  docker.kill(oldContainers, next);
+                });
+              }, 10 * 1000);
+            });
+          });
+        });
       });
     } else {
-      next()
+      next();
     }
   });
 }
