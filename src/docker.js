@@ -31,6 +31,7 @@ exports.isRunning = function (containerName, cb) {
 };
 
 exports.kill = function kill (containerIds, cb) {
+  containerIds = containerIds.filter(Boolean);
   if (!containerIds.length) {
     // No containers to kill, do nothing...
     return cb();
@@ -113,6 +114,10 @@ function run (cmd, args, cb) {
 
   command.stderr.on('data', function (d) {
     data += d;
+  });
+
+  command.on('error', function (err) {
+    cb(err);
   });
 
   command.on('close', function (code) {
