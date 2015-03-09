@@ -57,7 +57,7 @@ exports.run = function runImage (build, cb) {
     // Pass the MONGO_HOST env var on to the container (used by the API-container)
     '-e', 'MONGO_HOST=' + dbHost,
     // Give it a virtual host configuration that [Katalog](https://registry.hub.docker.com/u/joakimbeng/katalog/) picks up
-    '-e', 'KATALOG_VHOSTS=default/' + build.endpoint,
+    '-e', 'KATALOG_VHOSTS=default' + (build.endpoint ? '/' + build.endpoint : ''),
     buildToImageName(build)
   ], function (err) {
     cb(err, name);
