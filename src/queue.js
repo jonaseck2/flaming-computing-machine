@@ -4,7 +4,7 @@ exports.next = function next (db, cb) {
   // Find the oldest build which is not successful and have 5 or less build attempts:
   db.collection('buildqueue')
     .find(
-      {isSuccessful: false, nrOfAttempts: {$lte: 5}},
+      {isSuccessful: false, nrOfAttempts: {$lt: 5}},
       {limit: 1, sort: [['createdAt', 'ascending']]}
     )
     .toArray(function (err, builds) {
