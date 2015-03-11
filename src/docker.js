@@ -3,10 +3,10 @@ var spawn = require('child_process').spawn;
 var exec = require('child_process').exec;
 var dbHost = process.env.MONGO_HOST || 'localhost';
 
-exports.build = function build (build, cb) {
+exports.build = function doBuild (build, cb) {
   var image = buildToImageName(build);
-  buildImage(build.repo, image, function (err) {
-    cb(err, image);
+  buildImage(build.repo, image, function (err, message) {
+    cb(err, message);
   });
 };
 
@@ -21,9 +21,9 @@ exports.getRunning = function getRunning (build, cb) {
 };
 
 exports.isRunning = function (containerName, cb) {
-  exec('docker ps | grep "' + containerName + '"', function (err, stdout, stderr) {
+  exec('docker ps | grep "' + containerName + '"', function (err, stdout) {
     if (err) {
-      return cb(err);
+      return cb(null, false);
     }
     stdout = (''+stdout).trim();
     cb(null, !!stdout);
@@ -83,9 +83,9 @@ function runningImages (tag, cb) {
   //  * docker ps -a # list all containers, running or not
   //  * grep "<container tag name>" # filter by container tag name, used when starting the container in `runImage` above
   //  * awk '{print $1}' # get the contents of the first column in the output, i.e. the container id's
-  exec('docker ps -a | grep "' + tag + '" | awk \'{print $1}\'', function (err, stdout, stderr) {
+  exec('docker ps -a | grep "' + tag + '" | awk \'{print $1}\'', function (err, stdout) {
     if (err) {
-      return cb(err);
+      return cb(null, false);
     }
     cb(null, ''+stdout);
   });
@@ -124,6 +124,6 @@ function run (cmd, args, cb) {
     if (code !== 0) {
       return cb(new Error(data));
     }
-    return cb();
+    return cb(null, data);
   });
 }
