@@ -2,6 +2,7 @@
 var spawn = require('child_process').spawn;
 var exec = require('child_process').exec;
 var dbHost = process.env.MONGO_HOST || 'localhost';
+var dnsHost = process.env.DNS_HOST || 'localhost';
 
 exports.build = function doBuild (build, cb) {
   var image = buildToImageName(build);
@@ -59,6 +60,10 @@ exports.run = function runImage (build, cb) {
     '-e', 'MONGO_HOST=' + dbHost,
     // Give it a virtual host configuration that [Katalog](https://registry.hub.docker.com/u/joakimbeng/katalog/) picks up
     '-e', 'KATALOG_VHOSTS=default' + (build.endpoint ? '/' + build.endpoint : ''),
+    // Give it a service name configuration that [registrator](https://github.com/gliderlabs/registrator) picks up
+    '-e', 'SERVICE_NAME=' + build.endpoint,
+    // Set dns to consul
+    '--dns', dnsHost,
     buildToImageName(build)
   ], function (err) {
     cb(err, name);
